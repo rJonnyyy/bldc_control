@@ -24,6 +24,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "six_step_logic.h"
 
 /* USER CODE END Includes */
 
@@ -102,17 +103,9 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-	  /*
-	  /// Simple test, when button is pressed - LED off
-	  if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_10) == GPIO_PIN_SET)  // Taster NICHT gedrückt (HIGH)
-	   {
-	     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);      // LED AN
-	   }
-	   else                                                       // Taster gedrückt (LOW)
-	   {
-	     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);    // LED AUS
-	   }
-	   */
+
+
+
   }
 
 
@@ -179,22 +172,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	    }
 }
 
-/*
-// EXTI ISR Routine - enthält die Kommutierungslogik für einen Schritt
-void HAL_GPIO_EXTI_Callback(void) {
-  if (currentstate == RUN) {
-    int hallpattern = get_hall_pattern();
-
-    sector = hall_2_sector(hallpattern);
-
-    voltagevector = sector_2_vector(sector);
-
-    bitmask = vector_2_gpio(voltagevector);
-
-    set_output_gpio(bitmask);
-  }
-}
-*/
 /* USER CODE END 4 */
 
 /**
