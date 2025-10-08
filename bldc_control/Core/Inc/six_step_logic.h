@@ -31,7 +31,8 @@
 
 
 /* Datentypen / Strukturen */
-typedef struct {
+
+/*typedef struct {
     uint8_t A_pos;
     uint8_t A_neg;
     uint8_t B_pos;
@@ -39,6 +40,12 @@ typedef struct {
     uint8_t C_pos;
     uint8_t C_neg;
 } phase_vec_t;
+*/
+enum { PH_A = 0, PH_B = 1, PH_C = 2 };
+typedef uint8_t vec_t;          // unser Vektorcode (ein Byte)
+#define VEC_INVALID 0xFF        // Kennung „ungültig/alles aus“
+
+
 
 typedef struct {
     uint32_t bsrrA;

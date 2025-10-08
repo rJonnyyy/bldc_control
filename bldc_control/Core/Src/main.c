@@ -91,7 +91,10 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC1_Init();
   MX_USART2_UART_Init();
+
+
   /* USER CODE BEGIN 2 */
+  disable_mosfets(); // stellt sicher, dass alle Halbbrücken am Anfang aus sind.
 
   /* USER CODE END 2 */
 
