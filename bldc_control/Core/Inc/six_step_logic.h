@@ -1,8 +1,15 @@
 #ifndef INC_SIX_STEP_LOGIC_H_
 #define INC_SIX_STEP_LOGIC_H_
 
-#include "stm32f4xx.h"   // oder main.h, falls du HAL verwenden willst
+/* ============================================================================================================ */
+/* Includes */
 
+#include "stm32f4xx.h"   // oder main.h, falls du HAL verwenden willst
+#include <stdint.h>
+
+
+
+/* ============================================================================================================ */
 /* Pinbelegungen - ANPASSEN JE NACH HARDWARE VERSCHALTUNG */
 
 #define A_IN_PORT   	GPIOA
@@ -26,46 +33,76 @@
 #define HALL_2_PIN    	11
 #define HALL_3_PIN    	12
 
-#define BSRR_SET(pin)      (1u << (pin))
-#define BSRR_CLR(pin)      (1u << ((pin) + 16))
+#define DIR_PORT		GPIOC
+#define DIR_PIN			6
+
+#define CCW 			0
+#define CW 				1
+
+#define SET_IN_PORT 	GPIOA
+#define SET_INH_PORT 	GPIOB
+
+/* Kennung für „ungültig/alles aus“ im Vektorcode */
+#define VEC_INVALID 0xFF
+
+/* Bit Set/Reset Register BSSR Makros:
+ *  Warum BSSR und nicht ODR: Mit dem BSSR kannst du gleichzeitig bestimmte Bits eines Ports setzen und andere Rücksetzen (in einem Befehl)
+ *  Beim ODR ein Befehl für RÜcksetzen (AND Maske) und ein Befehl fürs Setzen (OR Maske) */
+#define BSRR_SET(pin) (1u << (pin))          // Bit 0..15
+#define BSRR_RST(pin) (1u << ((pin) + 16))   // Bit 16..31
 
 
+/* ============================================================================================================ */
 /* Datentypen / Strukturen */
 
-/*typedef struct {
-    uint8_t A_pos;
-    uint8_t A_neg;
-    uint8_t B_pos;
-    uint8_t B_neg;
-    uint8_t C_pos;
-    uint8_t C_neg;
-} phase_vec_t;
-*/
-enum { PH_A = 0, PH_B = 1, PH_C = 2 };
-typedef uint8_t vec_t;          // unser Vektorcode (ein Byte)
-#define VEC_INVALID 0xFF        // Kennung „ungültig/alles aus“
-
-
-
+/* bit set reset zeug - alternative zu direkt odr schreiben */
 typedef struct {
     uint32_t bsrrA;
     uint32_t bsrrB;
-} gpio_vec_t;
+} mask_vec_t;
 
 
+/* -------------------------
+ * Phasen-Indizes A = 0; B = 1; C = 2;
+ * -------------------------
+ * Vektorcode Interpretation:
+ * -------------------------
+ * Linke 4 Bits = positive Phase +
+ * Rechte 4 Bits = negative Phase -
+ * Bsp: (B+, C−) → (1<<4)|2 = 0x12
+ */
+enum {
+	PH_A = 0,
+	PH_B = 1,
+	PH_C = 2
+};
+
+
+/* ============================================================================================================ */
 /* Funktionen */
 uint8_t get_hall_pattern(void);
-uint8_t hall_2_sector(uint8_t hallpattern);
-phase_vec_t sector_2_vector(uint8_t sector);
-gpio_vec_t vector_2_gpio(const phase_vec_t *v);
-void set_output_gpio(const gpio_vec_t *g);
+
+/* CCW */
+uint8_t hall_2_sector_ccw(uint8_t hallpattern);
+uint8_t sector_2_vector_ccw(uint8_t sector);
+
+/* CW */
+uint8_t hall_2_sector_cw(uint8_t hallpattern);
+uint8_t sector_2_vector_cw(uint8_t sector);
+
+/* Richtungsunabhängig */
+mask_vec_t vector_2_gpio(uint8_t vector);
+
+void set_output_gpio(const mask_vec_t *gpio_masks);
+
+uint8_t determine_direction(void);
+
 void six_step_sequence(void);
+
 void disable_mosfets(void); // Am Anfang der main einfach einmal aufrufen, dass sicher alles aus ist
 
 
-
-// bool check_hall_pattern(int hallpatern);
-
+/* ============================================================================================================ */
 #endif /* INC_SIX_STEP_LOGIC_H_ */
 
 

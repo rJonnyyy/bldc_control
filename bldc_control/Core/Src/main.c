@@ -91,8 +91,6 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC1_Init();
   MX_USART2_UART_Init();
-
-
   /* USER CODE BEGIN 2 */
   disable_mosfets(); // stellt sicher, dass alle Halbbrücken am Anfang aus sind.
 
@@ -107,7 +105,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
 
-
+/* STATE MA CH IN E EEEEE */
 
   }
 
@@ -166,13 +164,22 @@ void SystemClock_Config(void)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
+	  // Timing-Pin HIGH (ISR start) PA6
+	    GPIOA->BSRR = (1u << 6);
+
 	 if (GPIO_Pin == GPIO_PIN_10 ||
 	        GPIO_Pin == GPIO_PIN_11 ||
 	        GPIO_Pin == GPIO_PIN_12)
 	    {
 	        // Deine ISR-Logik hier:
 	        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);  // Beispiel: LED toggeln
+
+	        six_step_sequence();
 	    }
+
+	 // Pin toggeln und dann messen wie lange die ISR dauert
+	  // Timing-Pin LOW (ISR end)
+	    GPIOA->BSRR = (1u << (6 + 16));
 }
 
 /* USER CODE END 4 */

@@ -1,5 +1,6 @@
 #include "six_step_logic.h"
 
+
 /* aktuelles hallpattern einlesen */
 uint8_t get_hall_pattern(void) {
 	uint32_t idr = HALL_PORT->IDR;
@@ -10,8 +11,10 @@ uint8_t get_hall_pattern(void) {
 }
 
 
+
 /* Aktuelles hallpattern -> Sektor bestimmen */
-uint8_t hall_2_sector(uint8_t hallpattern) {
+/* Drehrichtungsabhängige Funktion */
+uint8_t hall_2_sector_ccw(uint8_t hallpattern) {
     static const uint8_t sector_lut[8] = {
     		0, /*000-0*/
 			1, /*001-1*/
@@ -28,37 +31,186 @@ uint8_t hall_2_sector(uint8_t hallpattern) {
 }
 
 
+uint8_t hall_2_sector_cw(uint8_t hallpattern) {
+	static const uint8_t sector_lut[8] = {
+	    	0, /*000-0*/
+			1, /*001-1*/
+			5, /*010-2*/
+			6, /*011-3*/
+			3, /*100-4*/
+			2, /*101-5*/
+	 		4, /*110-6*/
+			0  /*111-7*/
+	}; // muss angepasst werden, das hallpattern (also z.B. die Zahl 2-010) ist hier der index ! an den jeweiligen Eintrag muss dann die entsprechende Sektornummer geschrieben werden
+	hallpattern = hallpattern & 0x07;
+	uint8_t sector = sector_lut[hallpattern];
+	return sector;
+}
 
-/* bisschen unnötig ein neuen Datentyp einzuführen usw */
+
+
 /* sector -> nächsten notwendigen Vektor bestimmen - Drehrichtung hat hier auch was zu sagen aber lass mal gut sein */
 /* wenn Sektor 1: BC stellen - nur eine Drehrichtung bisher - Abhängig, wo man Sektor 1 definiert. */
-/*
-phase_vec_t sector_2_vector(uint8_t sector) {
-    phase_vec_t vv = {0};
-    switch (sector) {
-        case 1: vv.B_pos=1; vv.C_neg=1; break; // 1: BC
-        case 2: vv.B_pos=1; vv.A_neg=1; break; // 2: BA
-        case 3: vv.C_pos=1; vv.A_neg=1; break; // 3: CA
-        case 4: vv.C_pos=1; vv.B_neg=1; break; // 4: CB
-        case 5: vv.A_pos=1; vv.B_neg=1; break; // 5: AB
-        case 6: vv.A_pos=1; vv.C_neg=1; break; // 6: AC
-        default:  break; // alles null
-    }
-    return vv;
-} */
+uint8_t sector_2_vector_ccw(uint8_t sector) {
+	uint8_t volt_vec = VEC_INVALID; // standartmäßig 0xFF - Zeichen für invalid
+
+	switch (sector)
+	{
+		case 1: volt_vec = (PH_B<<4) | PH_C; break; // BC - 12
+		case 2: volt_vec = (PH_B<<4) | PH_A; break; // BA - 10
+		case 3: volt_vec = (PH_C<<4) | PH_A; break; // CA - 20
+		case 4: volt_vec = (PH_C<<4) | PH_B; break; // CB - 21
+		case 5: volt_vec = (PH_A<<4) | PH_B; break; // AB - 1
+		case 6: volt_vec = (PH_A<<4) | PH_C; break; // AC - 2
+		default: volt_vec = VEC_INVALID; break; // wenn Sektor = 0
+	}
+
+	return volt_vec;
+}
+
+
+uint8_t sector_2_vector_cw(uint8_t sector) {
+	uint8_t volt_vec = VEC_INVALID; // standartmäßig 0xFF - Zeichen für invalid
+
+	switch (sector)
+	{
+		case 1: volt_vec = (PH_C<<4) | PH_B; break; // CB - 21
+		case 2: volt_vec = (PH_C<<4) | PH_A; break; // CA - 20
+		case 3: volt_vec = (PH_B<<4) | PH_A; break; // BA - 10
+		case 4: volt_vec = (PH_B<<4) | PH_C; break; // BC - 12
+		case 5: volt_vec = (PH_A<<4) | PH_C; break; // AC - 02
+		case 6: volt_vec = (PH_A<<4) | PH_B; break; // AB - 01
+		default: volt_vec = VEC_INVALID; break; // wenn Sektor = 0
+	}
+
+	return volt_vec;
+}
+
+
+
+/* Drehrichtungsunabhängig */
+/* Setzt entsprechende GPIO je nach gefordertem Spannungs - Vektor */
+/* ============================================================================================
+ * LOGIK DER PHASENANSTEUERUNG (BTN-Treiber)
+ * --------------------------------------------------------------------------------------------
+ *
+ * 1) Einzelphasen-Tabelle (GPIO → Schalterzustände)
+ *
+ *    INH | IN | High-Side (HSS) | Low-Side (LSS)
+ *   ------+----+-----------------+---------------
+ *     0  | 0  | OFF              | OFF      // Phase deaktiviert
+ *     0  | 1  | OFF              | OFF      // Phase deaktiviert (INH=0 dominiert)
+ *     1  | 0  | OFF              | ON       // Low-Side aktiv  → negative Phase (-)
+ *     1  | 1  | ON               | OFF      // High-Side aktiv → positive Phase (+)
+ *
+ * 2) Phasenvektoren gemäß 6-Step-Kommutierung (eine Richtung)
+ *
+ *    Zeiger | Aktive Phasen |  IN_A INH_A  |  IN_B INH_B  |  IN_C INH_C   |
+ *   --------+---------------+-------------------------------------------------------------
+ *     AB    | A+ , B−       |    1    1    |    0    1    |    x     0    |
+ *     AC    | A+ , C−       |	  1    1 	|    x    0    |    0     1    |
+ *     BC    | B+ , C−       |	  x    0	|    1    1    |    0     1    |
+ *     BA    | B+ , A−       | 	  0    1	|    1    1    |    x     0    |
+ *     CA    | C+ , A−       | 	  0    1	|    x    0    |    1     1    |
+ *     CB    | C+ , B−       | 	  x    0	|	 0    1    |    1     1    |
+ *
+ *     bzw
+ *
+ *     AB    | A+ , B−       | IN_A=1, INH_A=1 ; IN_B=0, INH_B=1 ; IN_C=x, INH_C=0
+ *     AC    | A+ , C−       | IN_A=1, INH_A=1 ; IN_C=0, INH_C=1 ; IN_B=x, INH_B=0
+ *     BC    | B+ , C−       | IN_B=1, INH_B=1 ; IN_C=0, INH_C=1 ; IN_A=x, INH_A=0
+ *     BA    | B+ , A−       | IN_B=1, INH_B=1 ; IN_A=0, INH_A=1 ; IN_C=x, INH_C=0
+ *     CA    | C+ , A−       | IN_C=1, INH_C=1 ; IN_A=0, INH_A=1 ; IN_B=x, INH_B=0
+ *     CB    | C+ , B−       | IN_C=1, INH_C=1 ; IN_B=0, INH_B=1 ; IN_A=x, INH_A=0
+ *
+ *  →  "x" bedeutet: Phase komplett aus (INH=0)
+ *  →  Jede Phase hat also drei mögliche Zustände:
+ *        +  (INH=1, IN=1)
+ *        –  (INH=1, IN=0)
+ *        OFF (INH=0)
+ *
+ *  Diese Zuordnung wird in vector_2_gpio() implementiert.
+ * ============================================================================================ */
+mask_vec_t vector_2_gpio(uint8_t volt_vec) {
+
+	 // Dieser Vektor enthält die Bitmasken um je nach Vector die entsprechenden GPIO zu schalten
+	 mask_vec_t gpio_masks = (mask_vec_t){0};
+
+	 /* Baseline: ALLES AUS (IN=0, INH=0) */
+	 uint32_t mPA_IN = 0, mPB_INH = 0;
+	 mPA_IN |= BSRR_RST(A_IN_PIN) | BSRR_RST(B_IN_PIN) | BSRR_RST(C_IN_PIN); // alle In Pins aus
+	 mPB_INH |= BSRR_RST(A_INH_PIN)| BSRR_RST(B_INH_PIN)| BSRR_RST(C_INH_PIN); // alle INH Pins aus
+
+	 if (volt_vec != VEC_INVALID) // when invalid, bleibt die halbbrücke einfach aus, dank Baseline
+	   {
+	       uint8_t pos = (volt_vec >> 4) & 0x0Fu;  // High-Nibble: positive Phase (A/B/C = 0/1/2)
+	       uint8_t neg =  volt_vec       & 0x0Fu;  // Low-Nibble:  negative Phase (A/B/C)
+
+	       /* + Phase: INH=1, IN=1 */
+	       switch (pos) {
+	           case PH_A: mPA_IN |= BSRR_SET(A_IN_PIN); mPB_INH |= BSRR_SET(A_INH_PIN); break;
+	           case PH_B: mPA_IN |= BSRR_SET(B_IN_PIN); mPB_INH |= BSRR_SET(B_INH_PIN); break;
+	           case PH_C: mPA_IN |= BSRR_SET(C_IN_PIN); mPB_INH |= BSRR_SET(C_INH_PIN); break;
+	           default: break;
+	       }
+
+	       /* − Phase: INH=1, IN=0 (IN bereits 0 durch Baseline) */
+	       switch (neg) {
+	           case PH_A: mPB_INH |= BSRR_SET(A_INH_PIN); break;
+	           case PH_B: mPB_INH |= BSRR_SET(B_INH_PIN); break;
+	           case PH_C: mPB_INH |= BSRR_SET(C_INH_PIN); break;
+	           default: break;
+	       }
+
+	  }
+	  gpio_masks.bsrrA = mPA_IN;   // Port A (IN)
+	  gpio_masks.bsrrB = mPB_INH;   // Port B (INH)
+	  return gpio_masks;
+}
 
 
 
 
+/* Bitmasken ausgeben (atomar pro Port) */
+void set_output_gpio(const mask_vec_t *gpio_masks) {
+	SET_IN_PORT->BSRR = gpio_masks->bsrrA;  // GPIOA
+	SET_INH_PORT->BSRR = gpio_masks->bsrrB;  // GPIOB
+}
 
 
+/* Alle Brücken sicher AUS (beide Switches offen) */
+void disable_mosfets(void) {
+    mask_vec_t gpio_masks = {0};
+    gpio_masks.bsrrA = BSRR_RST(A_IN_PIN) | BSRR_RST(B_IN_PIN) | BSRR_RST(C_IN_PIN);
+    gpio_masks.bsrrB = BSRR_RST(A_INH_PIN)| BSRR_RST(B_INH_PIN)| BSRR_RST(C_INH_PIN);
+    set_output_gpio(&gpio_masks);
+}
+
+/* CCW (=0) oder CW (=1) */
+uint8_t determine_direction(void) {
+	uint32_t idr = DIR_PORT->IDR;
+	uint8_t dir = (idr >> DIR_PIN) & 1u;
+	return dir;
+}
 
 
+/* Diese Funktion vereint eine vollständige Kommutierungs - Sequenz */
+void six_step_sequence(void) {
+	uint8_t dir = determine_direction();
+	uint8_t hallpattern = get_hall_pattern();
+
+	if (dir == CCW) { // CCW
+		uint8_t sector = hall_2_sector_ccw(hallpattern);
+		uint8_t vector = sector_2_vector_ccw(sector);
+		mask_vec_t bitmask = vector_2_gpio(vector);
+		set_output_gpio(&bitmask);
+
+	} else { // CW
+		uint8_t sector = hall_2_sector_cw(hallpattern);
+		uint8_t vector = sector_2_vector_cw(sector);
+		mask_vec_t bitmask = vector_2_gpio(vector);
+		set_output_gpio(&bitmask);
+	}
+}
 
 
-
-
-gpio_vec_t vector_2_gpio(const phase_vec_t *v);
-void set_output_gpio(const gpio_vec_t *g);
-void six_step_sequence(void);
-void disable_mosfets(void);
